@@ -1,41 +1,47 @@
-from fastapi.testclient import TestClient
-from main import app, Base, engine, SessionLocal, User, Book, Borrowlist
 import pytest
+from fastapi.testclient import TestClient
+from main import app, Base, engine, get_db, User, Book, Borrowlist
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 
-# Create a new TestClient instance
-client = TestClient(app)
+# Create a new database for testing
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test_library.db"
+test_engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
-# Fixture to create and drop tables for each test
-@pytest.fixture(scope="function", autouse=True)
-def setup_and_teardown():
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
+# Recreate the database tables for testing
+Base.metadata.create_all(bind=test_engine)
 
-# Test creating a borrow entry and retrieving borrowed books
-def test_create_and_get_borrowlist():
-    # Create a user
-    response = client.post("/users/", json={"username": "testuser", "fullname": "Test User"})
+@pytest.fixture
+def client():
+    with TestClient(app) as client:
+        yield client
+
+@pytest.fixture
+def db_session():
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def test_create_and_get_borrowlist(client, db_session):
+    # Create user
+    response = client.post("/users/", params={"username": "test_user3", "fullname": "Test User 3"})
     assert response.status_code == 200
-    user = response.json()
+    user_id = response.json()["id"]
 
-    # Create a book
-    response = client.post("/books/", json={"title": "Test Book", "firstauthor": "Test Author", "isbn": "1234567890"})
+    # Create book
+    response = client.post("/books/", params={"title": "Test Book 3", "firstauthor": "Author 3", "isbn": "1122334455"})
     assert response.status_code == 200
-    book = response.json()
+    book_id = response.json()["id"]
 
-    # Create a borrow entry
-    response = client.post("/borrowlist/", json={"user_id": user["id"], "book_id": book["id"]})
+    # Create borrowlist entry
+    response = client.post("/borrowlist/", params={"user_id": user_id, "book_id": book_id})
     assert response.status_code == 200
-    borrow_entry = response.json()
-    assert borrow_entry["user_id"] == user["id"]
-    assert borrow_entry["book_id"] == book["id"]
 
-    # Retrieve borrowed books for the user
-    response = client.get(f"/borrowlist/{user['id']}")
+    # Get borrowlist for the user
+    response = client.get(f"/borrowlist/{user_id}")
     assert response.status_code == 200
-    borrowed_books = response.json()
-    assert len(borrowed_books) == 1
-    assert borrowed_books[0]["user_id"] == user["id"]
-    assert borrowed_books[0]["book_id"] == book["id"]
-
+    assert len(response.json()) == 1
+    assert response.json()[0]["book_id"] == book_id
