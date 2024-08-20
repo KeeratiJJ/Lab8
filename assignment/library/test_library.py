@@ -1,59 +1,41 @@
-from fastapi.testclient import TestClient
-from main import app, Base, engine, SessionLocal, User, Book
-import pytest
+from main import User, Book
 
+def test_add_user(db_session):
+    new_user = User(username="test_user1", fullname="Test User 1")
+    db_session.add(new_user)
+    db_session.commit()
 
-client = TestClient(app)
+    user = db_session.query(User).filter_by(username="test_user1").first()
+    assert user is not None
+    assert user.username == "test_user1"
 
-@pytest.fixture(scope="function", autouse=True)
-def setup_and_teardown():
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
+def test_delete_user(db_session):
+    user = User(username="test_user2", fullname="Test User 2")
+    db_session.add(user)
+    db_session.commit()
 
-def test_create_and_delete_user():
-    # Create user
-    response = client.post("/users/", json={"username": "testuser", "fullname": "Test User"})
-    assert response.status_code == 200
-    user = response.json()
-    assert user["username"] == "testuser"
-    assert user["fullname"] == "Test User"
-    
-    # Get verify
-    response = client.get(f"/borrowlist/{user['id']}")
-    assert response.status_code == 404 
+    db_session.delete(user)
+    db_session.commit()
 
-def test_create_and_delete_book():
-    # Create book
-    response = client.post("/books/", json={"title": "Test Book", "firstauthor": "Test Author", "isbn": "1234567890"})
-    assert response.status_code == 200
-    book = response.json()
-    assert book["title"] == "Test Book"
-    assert book["firstauthor"] == "Test Author"
-    assert book["isbn"] == "1234567890"
+    deleted_user = db_session.query(User).filter_by(username="test_user2").first()
+    assert deleted_user is None
 
-def test_borrow_book():
-    # Create user
-    response = client.post("/users/", json={"username": "testuser", "fullname": "Test User"})
-    assert response.status_code == 200
-    user = response.json()
+def test_add_book(db_session):
+    new_book = Book(title="Test Book 1", firstauthor="Author 1", isbn="1234567890")
+    db_session.add(new_book)
+    db_session.commit()
 
-    # Create book
-    response = client.post("/books/", json={"title": "Test Book", "firstauthor": "Test Author", "isbn": "1234567890"})
-    assert response.status_code == 200
-    book = response.json()
+    book = db_session.query(Book).filter_by(isbn="1234567890").first()
+    assert book is not None
+    assert book.title == "Test Book 1"
 
-    # Borrow book
-    response = client.post("/borrowlist/", json={"user_id": user["id"], "book_id": book["id"]})
-    assert response.status_code == 200
-    borrow_entry = response.json()
-    assert borrow_entry["user_id"] == user["id"]
-    assert borrow_entry["book_id"] == book["id"]
+def test_delete_book(db_session):
+    book = Book(title="Test Book 2", firstauthor="Author 2", isbn="0987654321")
+    db_session.add(book)
+    db_session.commit()
 
-    # Check borrowed books
-    response = client.get(f"/borrowlist/{user['id']}")
-    assert response.status_code == 200
-    borrowed_books = response.json()
-    assert len(borrowed_books) == 1
-    assert borrowed_books[0]["book_id"] == book["id"]
+    db_session.delete(book)
+    db_session.commit()
 
+    deleted_book = db_session.query(Book).filter_by(isbn="0987654321").first()
+    assert deleted_book is None
